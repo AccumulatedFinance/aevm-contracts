@@ -689,10 +689,21 @@ abstract contract ERC20Rebase is Ownable, ERC20 {
     }
 
     function rebase(uint256 amount) public onlyOwner {
-        uint256 baseTokens = (amount * PPS_SCALE_FACTOR) / getPricePerShare();
-        require(baseTokens > 0, "InsufficientShares");
         accumulatedRewards += amount;
         emit Rebase(amount);
+    }
+
+
+    function mint(address account, uint256 amount) public onlyOwner {
+        uint256 baseTokens = (amount * PPS_SCALE_FACTOR) / getPricePerShare();
+        require(baseTokens > 0, "InsufficientShares");
+        _mint(account, baseTokens);
+    }
+
+    function burn(uint256 amount) public virtual {
+        uint256 baseTokens = (amount * PPS_SCALE_FACTOR) / getPricePerShare();
+        require(baseTokens > 0, "InsufficientShares");
+        _burn(msg.sender, baseTokens);
     }
 
 }
