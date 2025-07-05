@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.20;
 
+interface IMinter {
+    function deposit(address receiver) external payable;
+    function stakingToken() external view returns (IERC20);
+    function previewDeposit(uint256 amount) external view returns (uint256);
+}
+
+interface IWst {
+    function deposit(uint256 assets, address receiver) external returns (uint256 shares);
+}
+
 /**
  * @dev Interface of the ERC-20 standard as defined in the ERC.
  */
@@ -544,34 +554,33 @@ contract AEVMBridge is Ownable, ReentrancyGuard {
     
     using SafeERC20 for IERC20;
 
-    mapping(address => uint256) public minDeposits; // 0 — not allowed
+    IMinter public minter;
+    IERC20 public stakingToken;
+    IWst public wst;
 
-    constructor(address[] memory tokens, uint256[] memory mins) {
-        require(tokens.length == mins.length, "MismatchedInputs");
-        for (uint256 i = 0; i < tokens.length; i++) {
-            minDeposits[tokens[i]] = mins[i];
-        }
+    constructor(address lstminter, address wsttoken) {
+        wst = IWst(wsttoken);
+        minter = IMinter(lstminter);
+        stakingToken = minter.stakingToken();
     }
 
-    event SetMinDeposit(address indexed token, uint256 min);
-    event Deposit(address indexed receiver, address indexed token, uint256 amount, bytes32 invite);
+    event Deposit(address indexed receiver, uint256 amount);
 
-    function deposit(address receiver, bytes32 invite) public payable nonReentrant {
-        require(minDeposits[address(0)] > 0, "NotAllowed");
-        require(msg.value >= minDeposits[address(0)], "LessThanMin");
-        emit Deposit(receiver, address(0), msg.value, invite);
+    function deposit(address receiver) public payable nonReentrant {
+        require(msg.value > 0, "ZeroAmount");
+        minter.deposit{value: msg.value}(address(this));
+        uint256 amount = minter.previewDeposit(msg.value);
+        stakingToken.approve(address(wst), amount);
+        wst.deposit(amount, address(this));
+        emit Deposit(receiver, msg.value);
     }
 
-    function deposit(address token, uint256 amount, address receiver, bytes32 invite) public nonReentrant {
-        require(minDeposits[token] > 0, "NotAllowed");
-        require(amount >= minDeposits[token], "LessThanMin");
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        emit Deposit(receiver, token, amount, invite);
-    }
-
-    function setMinDeposit(address token, uint256 min) public onlyOwner {
-        minDeposits[token] = min;
-        emit SetMinDeposit(token, min);
+    function deposit(uint256 amount, address receiver) public nonReentrant {
+        require(amount > 0, "ZeroAmount");
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
+        stakingToken.approve(address(wst), amount);
+        wst.deposit(amount, address(this));
+        emit Deposit(receiver, amount);
     }
 
 }
